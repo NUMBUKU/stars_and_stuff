@@ -59,21 +59,25 @@ int __read_metadata (picture * img){
 }
 
 int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
-    char bayer [5]; read_bayer(img->file, bayer);
-    int bias = ( int ) read_keyval(img->file, "BZERO   ");
-    img->avg = 0; // Recalculate average
+    int bias = ( int ) read_keyval(img->file, "BZERO   "),
+    mono = 0;
+    char bayer [5]; if (read_bayer(img->file, bayer) == -1) mono = 1; // Monochrome file handling
+    img->avg = 0.0; // Recalculate average
 
-    unsigned short * buf = ( unsigned short * ) malloc(img->height * img->width * sizeof(unsigned short)); // Allocate a buffer for debayered image
-    if (buf == NULL) return -1; // Malloc failed
-
-    for (int row = 0; row < img->height; row++) for (int col = 0; col < img->width; col++)
+    for (int row = 0; row < img->height; row++) for (int col = 0; col < img->width; col++){
         img->data[row][col] = bias + __endian_swap(img->data[row][col]); // Convert raw data to physical value
+        img->avg += img->data[row][col];
+    }
+    img->avg /= ( double ) (img->width*img->height);
+    if (mono) return 0;
+    img->avg = 0.0;
 
     // Interpolation
+    unsigned short * buf = ( unsigned short * ) malloc(img->height * img->width * sizeof(unsigned short)); // Allocate a buffer for debayered image
+    if (buf == NULL) return -1; // Malloc failed
+    int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
     for (int row = 0; row < img->height; row++){
         for (int col = 0; col < img->width; col++){
-            int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
-
             for (int currow = row-1; currow < row+2; currow++) for (int curcol = col-1; curcol < col+2; curcol++){
                 if (currow >= img->height || currow < 0 || curcol >= img->width || curcol < 0) continue;
                 int bayer_index = (curcol % 2) + 2*(currow % 2), color_index = 1;

@@ -1,4 +1,5 @@
 # include <stdio.h>
+# include <dirent.h>
 
 # include "readfits/readfits.h"
 # include "stardet/stardet.h"
@@ -7,9 +8,8 @@ int const N_stars = 300,
 HIST_RES = 10;
 
 // Threshold above which a pixel will be checked for being a star
-int detection_threshold (int max, double avg){
+int detection_threshold (double avg){
     return ( int ) ceil(avg * 3);
-    // return ( int ) ceil(( double ) max * .5);
 }
 
 // RGB to monochrome conversion function
@@ -190,7 +190,7 @@ int main (int argc, char const ** argv){
 
     err = read_starfile(argv[1], &img, &RGB_to_mono); errhandle(err); // Read file
     res = get_resolution();
-    img.thres = detection_threshold(img.max, img.avg);
+    img.thres = detection_threshold(img.avg);
 
     int n_extracted_stars = extract_stars(&img, stars, N_stars); // Extract star positions
 
