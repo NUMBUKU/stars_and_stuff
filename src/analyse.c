@@ -1,5 +1,4 @@
 # include <stdio.h>
-# include <dirent.h>
 
 # include "readfits/readfits.h"
 # include "stardet/stardet.h"
