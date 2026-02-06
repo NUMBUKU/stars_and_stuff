@@ -59,8 +59,7 @@ int __read_metadata (picture * img){
 }
 
 int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
-    int bias = ( int ) read_keyval(img->file, "BZERO   "),
-    mono = 0;
+    int bias = ( int ) read_keyval(img->file, "BZERO   "), mono = 0;
     char bayer [5]; if (read_bayer(img->file, bayer) == -1) mono = 1; // Monochrome file handling
     img->avg = 0.0; // Recalculate average
 
@@ -68,7 +67,7 @@ int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
         img->data[row][col] = bias + __endian_swap(img->data[row][col]); // Convert raw data to physical value
         img->avg += img->data[row][col];
     }
-    img->avg /= ( double ) (img->width*img->height);
+    img->avg /= ( double ) (img->width * img->height);
     if (mono) return 0;
     img->avg = 0.0;
 
