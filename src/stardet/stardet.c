@@ -9,6 +9,11 @@ int const __FIND_MIDDLE_ITER = 3, // Number of iterations to find star center
 __STAR_MARGIN = 30, // Minimum distance between stars
 __RAYS = 10; // Number of rays to find major/minor axis (should ALWAYS be even)
 
+// RGB to monochrome conversion function
+int __RGB_to_mono (int R, int G, int B){
+    return ( int ) (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
+}
+
 // Perform a byte swap on the input
 signed short __endian_swap (unsigned short in){
     short b0 = (in & 0xff) << 8, b1 = in >> 8;
@@ -34,7 +39,7 @@ int __check_PGM (char const * path){
         c = path[i];
         if (c == '\0') return -1; // Invalid file type
     }
-    
+
     if (path[i] == 'p' && path[i+1] == 'g' && path[i+2] == 'm' && path[i+3] == '\0') return 1; // PGM file
     else if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && path[i+3] == 's' && path[i+4] == '\0') return 0; // FITS file
     
@@ -58,7 +63,7 @@ int __read_metadata (picture * img){
     return 0;
 }
 
-int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
+int __debayer (picture * img){
     int bias = ( int ) read_keyval(img->file, "BZERO   "),
     mono = 0;
     char bayer [5]; if (read_bayer(img->file, bayer) == -1) mono = 1; // Monochrome file handling
@@ -75,9 +80,10 @@ int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
     // Interpolation
     unsigned short * buf = ( unsigned short * ) malloc(img->height * img->width * sizeof(unsigned short)); // Allocate a buffer for debayered image
     if (buf == NULL) return -1; // Malloc failed
-    int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
     for (int row = 0; row < img->height; row++){
         for (int col = 0; col < img->width; col++){
+            int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
+
             for (int currow = row-1; currow < row+2; currow++) for (int curcol = col-1; curcol < col+2; curcol++){
                 if (currow >= img->height || currow < 0 || curcol >= img->width || curcol < 0) continue;
                 int bayer_index = (curcol % 2) + 2*(currow % 2), color_index = 1;
@@ -90,7 +96,7 @@ int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
             }
 
             for (int i = 0; i < 3; i++) colors[i] /= color_count[i];
-            buf[row*img->width + col] = RGB_to_mono(colors[0], colors[1], colors[2]);
+            buf[row*img->width + col] = __RGB_to_mono(colors[0], colors[1], colors[2]);
         }
     }
 
@@ -105,7 +111,7 @@ int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
 }
 
 // Get data from file
-int read_starfile (char const * path, picture * img, int (*RGB_to_mono)(int, int, int)){
+int read_starfile (char const * path, picture * img){
     img->file = fopen(path, "rb");
     if (img->file == NULL) return -1; // Invalid path
     img->PGM = __check_PGM(path); // Check if file is PGM or FITS type
@@ -137,7 +143,7 @@ int read_starfile (char const * path, picture * img, int (*RGB_to_mono)(int, int
     }
     img->avg /= ( double ) (img->width*img->height);
 
-    if (!img->PGM && __debayer(img, RGB_to_mono) == -1) // Debayer (only if file is FITS type)
+    if (!img->PGM && __debayer(img) == -1) // Debayer (only if file is FITS type)
         return -3; // Malloc failed
 
     return 0;
@@ -153,7 +159,7 @@ int __potential_star (picture * img, int x, int y){
 // Check for duplicate star
 int __compare_star (star stars [], int x, int y, int stari){
     for (int i = 0; i < stari; i++)
-        if (abs(stars[i].pos.x - x) < __STAR_MARGIN && abs(stars[i].pos.y - y) < __STAR_MARGIN) return 0; // Reject if bright pixel is too close to known stars
+        if (abs(stars[i].pos.x - x) < 2.0*stars[i].FWHM && abs(stars[i].pos.y - y) < 2.0*stars[i].FWHM) return 0; // Reject if bright pixel is too close to known stars
 
     return 1; // New star
 }

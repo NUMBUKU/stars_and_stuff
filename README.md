@@ -62,3 +62,7 @@ This option generates a PPM file whith all the stars circled by a green circle w
 This option does what it says on the tin, however it is worth noting that this option also deallocates all of the used memory. This is something that [CRTL+C] doesn't do, and it will therefore cause a memory leak.
 
 ## Stack
+This is very temporary but for now the 'stacking' is just taking the average of all FITS files in a given directory. It then writes this average to a PGM greyscale. This can be done by typing the following in your command line:
+```Shell
+./bin/stack [path/to/input/directory]
+```
