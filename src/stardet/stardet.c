@@ -6,7 +6,7 @@
 
 // User variables
 int const __FIND_MIDDLE_ITER = 3, // Number of iterations to find star center
-__STAR_MARGIN = 30, // Minimum distance between stars
+__STAR_MARGIN = 50, // Maximum star size
 __RAYS = 10; // Number of rays to find major/minor axis (should ALWAYS be even)
 
 // Perform a byte swap on the input
@@ -75,9 +75,9 @@ int __debayer (picture * img, int (*RGB_to_mono)(int, int, int)){
     // Interpolation
     unsigned short * buf = ( unsigned short * ) malloc(img->height * img->width * sizeof(unsigned short)); // Allocate a buffer for debayered image
     if (buf == NULL) return -1; // Malloc failed
-    int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
     for (int row = 0; row < img->height; row++){
         for (int col = 0; col < img->width; col++){
+            int color_count [] = {0, 0, 0}, colors [] = {0, 0, 0};
             for (int currow = row-1; currow < row+2; currow++) for (int curcol = col-1; curcol < col+2; curcol++){
                 if (currow >= img->height || currow < 0 || curcol >= img->width || curcol < 0) continue;
                 int bayer_index = (curcol % 2) + 2*(currow % 2), color_index = 1;
@@ -153,7 +153,8 @@ int __potential_star (picture * img, int x, int y){
 // Check for duplicate star
 int __compare_star (star stars [], int x, int y, int stari){
     for (int i = 0; i < stari; i++)
-        if (abs(stars[i].pos.x - x) < __STAR_MARGIN && abs(stars[i].pos.y - y) < __STAR_MARGIN) return 0; // Reject if bright pixel is too close to known stars
+        if (( double ) abs(stars[i].pos.x - x) < 2.0*stars[i].FWHM &&
+            ( double ) abs(stars[i].pos.y - y) < 2.0*stars[i].FWHM) return 0; // Reject if bright pixel is too close to known stars
 
     return 1; // New star
 }
