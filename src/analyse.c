@@ -11,11 +11,6 @@ int detection_threshold (double avg){
     return ( int ) ceil(avg * 3);
 }
 
-// RGB to monochrome conversion function
-int RGB_to_mono (int R, int G, int B){
-    return ( int ) (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
-}
-
 
 picture img;
 double res = 0.0;
@@ -187,7 +182,7 @@ int main (int argc, char const ** argv){
 
     err = argc < 2; errhandle(err); // Check for path
 
-    err = read_starfile(argv[1], &img, &RGB_to_mono); errhandle(err); // Read file
+    err = read_starfile(argv[1], &img); errhandle(err); // Read file
     res = get_resolution();
     img.thres = detection_threshold(img.avg);
 
