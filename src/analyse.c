@@ -3,15 +3,16 @@
 # include "readfits/readfits.h"
 # include "stardet/stardet.h"
 
-int const N_stars = 300,
-HIST_RES = 10;
+// Some constants.
+int const N_stars = 300, // Max number of stars to extract.
+HIST_RES = 10; // Histogram x and y resolution.
 
-// Threshold above which a pixel will be checked for being a star
+// Threshold above which a pixel will be checked for being a star.
 int detection_threshold (double avg){
-    return ( int ) ceil(avg * 3);
+    return ( int ) ceil(avg * 3.0);
 }
 
-// RGB to monochrome conversion function
+// RGB to monochrome conversion function (CIE 1931)
 int RGB_to_mono (int R, int G, int B){
     return ( int ) (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
 }
@@ -20,17 +21,19 @@ int RGB_to_mono (int R, int G, int B){
 picture img;
 double res = 0.0;
 
-// Close file and free arrays so program can end
+/// @brief Closes file and free arrays so program can end safely.
 void close (){
     for (int row = 0; row < img.height; row++) free(img.data[row]);
     free(img.data); fclose(img.file);
 }
 
-int rd (double x){
+/// @brief Round function.
+/// @return An integer, useful for indexing.
+int __rd (double x){
     return ( int ) round(x);
 }
 
-// Error handle function
+/// @brief Prints an error message and exits with the given code. (Exept if that code is zero)
 void errhandle (int code){
     switch (code){
         case 1:
@@ -55,13 +58,15 @@ void errhandle (int code){
     exit(code);
 }
 
-// Returns minimum
+/// @brief Prints the histogram and calculates the maximum and standard deviation, storing them at the provided adresses.
+/// @return The calculated minimum.
 int print_histogram (int * max, double * stddev){
     int count [HIST_RES],
     unit = img.max / (HIST_RES - 1),
     min = img.max; *max = 0; *stddev = 0;
     for (int i = 0; i < HIST_RES; i++) count[i] = 0;
 
+    // Calculate min, max, stddev and collumn heights for histogram.
     for (int row = 0; row < img.height; row++) for (int col = 0; col < img.width; col++){
         if (img.data[row][col] < min) min = img.data[row][col];
         if (img.data[row][col] > *max) *max = img.data[row][col];
@@ -69,9 +74,9 @@ int print_histogram (int * max, double * stddev){
         *stddev += d*d;
         count[img.data[row][col] / unit]++;
     }
-
     *stddev = sqrt(*stddev / (img.width*img.height));
 
+    // Print histogram.
     for (int y = HIST_RES; y > 0; y--){
         if (y == HIST_RES) printf("^  "); else printf("|  ");
         for (int x = 0; x < HIST_RES; x++){
@@ -82,8 +87,11 @@ int print_histogram (int * max, double * stddev){
     printf("   ");
     for (int x = 0; x < HIST_RES; x++) printf("---");
     printf(">\n");
+
+    return min;
 }
 
+/// @brief Writes the file to a PPM file and marks the stars.
 void mark_stars (star stars [], int N){
     FILE * out = fopen("marked.ppm", "wb");
     fprintf(out, "P6\n%d %d\n255\n", img.width, img.height);
@@ -95,13 +103,14 @@ void mark_stars (star stars [], int N){
             if (fabs(sqrt(xdist*xdist + ydist*ydist) - stars[i].FWHM) < .5) { close = 1; break; }
         }
 
-        if (close) { fputc(0, out); fputc(255, out); fputc(0, out); } // { fputc(( int ) img.avg >> 8, out); fputc(( int ) img.avg >> 8, out); fputc(( int ) img.avg >> 8, out); }
-        else if (center) { fputc(255, out); fputc(0, out); fputc(0, out); }
-        else for (int i = 0; i < 3; i++) fputc(img.data[row][col] >> 8, out);
+        if (close) { fputc(0, out); fputc(255, out); fputc(0, out); } // Green.
+        else if (center) { fputc(255, out); fputc(0, out); fputc(0, out); } // Red.
+        else for (int i = 0; i < 3; i++) fputc(img.data[row][col] >> 8, out); // Data. (Greyscale)
     }
     fclose(out);
 }
 
+/// @brief Calculates average star statistics.
 void calc_avg (star * avg, star stars [], int N){
     for (int i = 0; i < N; i++){
         avg->e += stars[i].e;
@@ -113,6 +122,7 @@ void calc_avg (star * avg, star stars [], int N){
     if (N > 0) { avg->e /= N; avg->angle /= N; avg->FWHM /= N; avg->HFD /= N; avg->SNR /= N; }
 }
 
+/// @brief Prints the parameters of a given star.
 void print_star (star * star, int i, int avg){
     if (!avg){
         printf("Star No. %d: \n", i+1);
@@ -125,6 +135,7 @@ void print_star (star * star, int i, int avg){
     printf("\tSNR: %.2lf dB\n", star->SNR);
 }
 
+/// @brief Prints the user interface.
 void UI (star stars [], int N){
     char c;
     while (1){
@@ -170,6 +181,7 @@ void UI (star stars [], int N){
     }
 }
 
+/// @brief Calculates the resolution from the file metadata. (FITS only)
 float get_resolution (){
     if (img.PGM) return res;
 
@@ -179,7 +191,7 @@ float get_resolution (){
     double pixsc = read_keyval(img.file, "XPIXSZ  ");
     if (isnan(pixsc)) return res;
 
-    return 206.265 * pixsc / focal_length;
+    return 206.265 * pixsc / focal_length; // Credit: https://astronomy.tools/calculators/ccd
 }
 
 int main (int argc, char const ** argv){

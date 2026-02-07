@@ -65,11 +65,11 @@ float __read_float_keyval (FILE * fptr){
 
     do { // Read float
         if ('0' <= temp && temp <= '9'){
-            ret *= 10.0; ret += ( float ) (temp-'0');
+            ret *= 10.0; ret += ( float ) (temp-'0'); // Digit
         } else if (temp == '.'){
-            pointpos = counter;
+            pointpos = counter; // Decimal point
         } else {
-            ret = ( float ) temp;
+            ret = ( float ) temp; // Character
             break;
         }
         temp = fgetc(fptr);
@@ -79,7 +79,7 @@ float __read_float_keyval (FILE * fptr){
     for (int i = counter; i < 70; i++) fgetc(fptr); // Clear the lagging " "'s.
 
     if (pointpos == 0) return ret;
-    for (int i = 0; i < counter-1 - pointpos; i++) ret /= 10;
+    for (int i = 0; i < counter-1 - pointpos; i++) ret /= 10; // Handle decimal point
     return ret;
 }
 
@@ -92,7 +92,7 @@ float read_keyval (FILE * fptr, char const keyword [9]){
     if (__find_keyword(fptr, keyword) == -1) return NAN;
     ret = __read_float_keyval(fptr);
 
-    fseek(fptr, start, SEEK_SET);
+    fseek(fptr, start, SEEK_SET); // Go back to starting position
     return ret;
 }
 
@@ -108,6 +108,6 @@ int read_bayer (FILE * fptr, char bayer [5]){
     fgets(bayer, 5, fptr); // Read bayer pattern.
     for (int i = 5; i < 70; i++) fgetc(fptr); // Clear the lagging " "'s.
 
-    fseek(fptr, start, SEEK_SET);
+    fseek(fptr, start, SEEK_SET); // Go back to starting position
     return 0;
 }
