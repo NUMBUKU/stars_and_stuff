@@ -4,7 +4,12 @@
 # include "readfits/readfits.h"
 # include "stardet/stardet.h"
 
-int width = 0, height = 0;
+int width = 0, height = 0; // Width and height of first image
+
+void closeimg (picture * img){
+    for (int row = 0; row < img->height; row++) free(img->data[row]);
+    free(img->data); fclose(img->file);
+}
 
 void errhandle (int code){
     switch (code){
@@ -66,39 +71,36 @@ void get_full_path (char * path, char const * dir, char const * file){
 }
 
 int check_FITS (char const * path){
-    char c = ' '; int i;
+    char c = ' '; int i, pos = -1;
 
-    for (i = 0; c != '.'; i++){
+    // Find the last . in file extension
+    for (i = 0; c != '\0'; i++){
         c = path[i];
-        if (c == '\0') return 0; // Other file type
+        if (c == '.') pos = i;
     }
 
+    if (pos == -1) return 0; // Could not find a .
+
+    i = pos+1;
     if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && path[i+3] == 's' && path[i+4] == '\0') return 1; // FITS file
     
     return 0; // Other file type
 }
 
-double * add_filedata (char const * path, double * data, int n){
-    picture img;
-
-    errhandle(read_starfile(path, &img));
-
+void add_filedata (picture * img, double * data, int n){
     if (n == 0){
-        double * ret = ( double * ) malloc(img.width * img.height * sizeof(double));
-        if (ret == NULL) errhandle(-3);
-        width = img.width; height = img.height;
-        for (int row = 0; row < img.height; row++) for (int col = 0; col < img.width; col++){
-            ret[row*img.width + col] = ( double ) img.data[row][col];
+        width = img->width; height = img->height;
+        for (int row = 0; row < img->height; row++) for (int col = 0; col < img->width; col++){
+            data[row*img->width + col] = ( double ) img->data[row][col];
         }
-        return ret;
+        return;
     }
-
-    if (width != img.width || height != img.height) return data;
 
     for (int row = 0; row < height; row++) for (int col = 0; col < width; col++){
-        data[row*width + col] += ( double ) img.data[row][col];
+        data[row*width + col] += ( double ) img->data[row][col];
     }
-    return data;
+
+    return;
 }
 
 void readwrite (DIR * directory, char const * dirname){
@@ -113,8 +115,20 @@ void readwrite (DIR * directory, char const * dirname){
         char path [len]; get_full_path(path, dirname, filename);
 
         if (check_FITS(path)){ // Only read FITS files
-            data = add_filedata(( char const * ) path, data, n);
+            picture img;
+            errhandle(read_starfile(path, &img));
+            if (n != 0 && (width != img.width || height != img.height)) continue; // Image not the correct size
+            printf("Found a FITS file! Name: %s\n", filename);
+
+            if (n == 0){
+                data = ( double * ) malloc(img.width * img.height * sizeof(double));
+                if (data == NULL) errhandle(-3);
+            }
+
+            add_filedata(&img, data, n);
             n++;
+
+            closeimg(&img);
         }
 
         file = readdir(directory); // Get the next file in the directory
@@ -128,7 +142,7 @@ void readwrite (DIR * directory, char const * dirname){
         fputc(( int ) data[row*width + col] >> 8, out);
     }
 
-    free(data); fclose(out);
+    if (n != 0) free(data); fclose(out);
 }
 
 int main (int argc, char ** argv){
@@ -136,6 +150,7 @@ int main (int argc, char ** argv){
 
     DIR * directory = opendir(argv[1]);
     if (directory == NULL) errhandle(-1);
+    printf("Given directory: %s\n", argv[1]);
 
     readwrite(directory, argv[1]);
 

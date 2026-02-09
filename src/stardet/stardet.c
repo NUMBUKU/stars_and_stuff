@@ -33,13 +33,17 @@ int __rd (double x){
 }
 
 int __check_PGM (char const * path){
-    char c = ' '; int i;
+    char c = ' '; int i, pos = -1;
 
-    for (i = 0; c != '.'; i++){
+    // Find the last . in file extension
+    for (i = 0; c != '\0'; i++){
         c = path[i];
-        if (c == '\0') return -1; // Invalid file type
+        if (c == '.') pos = i;
     }
 
+    if (pos == -1) return 0; // Could not find a .
+
+    i = pos+1;
     if (path[i] == 'p' && path[i+1] == 'g' && path[i+2] == 'm' && path[i+3] == '\0') return 1; // PGM file
     else if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && path[i+3] == 's' && path[i+4] == '\0') return 0; // FITS file
     
