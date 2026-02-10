@@ -16,7 +16,7 @@ typedef struct {
     int thres; // Star detection threshold.
     int PGM; // 0 if file is .fits type, 1 if file is .pgm file.
     double avg; // Average pixel value.
-    unsigned short ** data; // Data array.
+    unsigned short * data; // Data array.
 } picture;
 
 // Vector struct.
@@ -39,7 +39,7 @@ typedef struct {
 /// @param path Should have .pgm or .fits extension.
 /// @param RGB_to_mono RGB to monochrome conversion function.
 /// @return -1 if path invalid, -2 if file invalid, -3 if allocation failed, 0 otherwise.
-int read_starfile (char const * path, picture * img, int (* RGB_to_mono) (int, int, int));
+int read_starfile (char const * path, picture * img);
 
 /// @brief Extracts stars from the given file into the given array.
 /// @param img Should be run through the "read" function first.

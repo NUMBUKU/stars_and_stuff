@@ -12,24 +12,18 @@ int detection_threshold (double avg){
     return ( int ) ceil(avg * 3.0);
 }
 
-// RGB to monochrome conversion function (CIE 1931)
-int RGB_to_mono (int R, int G, int B){
-    return ( int ) (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
-}
-
 
 picture img;
 double res = 0.0;
 
 /// @brief Closes file and free arrays so program can end safely.
 void close (){
-    for (int row = 0; row < img.height; row++) free(img.data[row]);
     free(img.data); fclose(img.file);
 }
 
 /// @brief Round function.
 /// @return An integer, useful for indexing.
-int __rd (double x){
+int rd (double x){
     return ( int ) round(x);
 }
 
@@ -68,11 +62,11 @@ int print_histogram (int * max, double * stddev){
 
     // Calculate min, max, stddev and collumn heights for histogram.
     for (int row = 0; row < img.height; row++) for (int col = 0; col < img.width; col++){
-        if (img.data[row][col] < min) min = img.data[row][col];
-        if (img.data[row][col] > *max) *max = img.data[row][col];
-        double d = ( double ) img.data[row][col] - img.avg;
+        if (img.data[row*img.width*4 + col*4] < min) min = img.data[row*img.width*4 + col*4];
+        if (img.data[row*img.width*4 + col*4] > *max) *max = img.data[row*img.width*4 + col*4];
+        double d = ( double ) img.data[row*img.width*4 + col*4] - img.avg;
         *stddev += d*d;
-        count[img.data[row][col] / unit]++;
+        count[img.data[row*img.width*4 + col*4] / unit]++;
     }
     *stddev = sqrt(*stddev / (img.width*img.height));
 
@@ -100,12 +94,12 @@ void mark_stars (star stars [], int N){
         for (int i = 0; i < N; i++){
             if (rd(stars[i].pos.y) == row && rd(stars[i].pos.x) == col) { center = 1; break; }
             int xdist = row - stars[i].pos.y, ydist = col - stars[i].pos.x;
-            if (fabs(sqrt(xdist*xdist + ydist*ydist) - stars[i].FWHM) < .5) { close = 1; break; }
+            if (fabs(xdist*xdist + ydist*ydist - stars[i].FWHM*stars[i].FWHM) < stars[i].FWHM) { close = 1; break; }
         }
 
         if (close) { fputc(0, out); fputc(255, out); fputc(0, out); } // Green.
         else if (center) { fputc(255, out); fputc(0, out); fputc(0, out); } // Red.
-        else for (int i = 0; i < 3; i++) fputc(img.data[row][col] >> 8, out); // Data. (Greyscale)
+        else for (int i = 0; i < 3; i++) fputc(img.data[row*img.width*4 + col*4 + i + 1] >> 8, out); // Data. (Greyscale)
     }
     fclose(out);
 }
@@ -199,7 +193,7 @@ int main (int argc, char const ** argv){
 
     err = argc < 2; errhandle(err); // Check for path
 
-    err = read_starfile(argv[1], &img, &RGB_to_mono); errhandle(err); // Read file
+    err = read_starfile(argv[1], &img); errhandle(err); // Read file
     res = get_resolution();
     img.thres = detection_threshold(img.avg);
 
