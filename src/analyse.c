@@ -13,7 +13,7 @@ int detection_threshold (double avg){
 }
 
 
-picture img;
+starfile img;
 double res = 0.0;
 
 /// @brief Closes file and free arrays so program can end safely.
@@ -34,16 +34,10 @@ void errhandle (int code){
             printf("No path provided.\n");
             break;
         case -1:
-            printf("Couldn't open file at provided path.\n");
-            break;
-        case -2:
             printf("File extension invalid.\n");
             break;
-        case -3:
+        case -2:
             printf("Allocation failed.\n");
-            break;
-        case -4:
-            printf("Invalid file.\n");
             break;
         default:
             return;
@@ -89,6 +83,8 @@ int print_histogram (int * max, double * stddev){
 void mark_stars (star stars [], int N){
     FILE * out = fopen("marked.ppm", "wb");
     fprintf(out, "P6\n%d %d\n255\n", img.width, img.height);
+    int gain = 7;
+    int rightshift = 8 * ((img.max + 1) >> 16);
     for (int row = 0; row < img.height; row++) for (int col = 0; col < img.width; col++){
         int close = 0, center = 0;
         for (int i = 0; i < N; i++){
@@ -99,7 +95,10 @@ void mark_stars (star stars [], int N){
 
         if (close) { fputc(0, out); fputc(255, out); fputc(0, out); } // Green.
         else if (center) { fputc(255, out); fputc(0, out); fputc(0, out); } // Red.
-        else for (int i = 0; i < 3; i++) fputc(img.data[row*img.width*4 + col*4 + i + 1] >> 8, out); // Data. (Greyscale)
+        else {
+            if (img.grey) for (int i = 0; i < 3; i++) fputc(gain * img.data[row*img.width*4 + col*4] >> rightshift, out); // Data. (Greyscale)
+            else for (int i = 0; i < 3; i++) fputc(gain * img.data[row*img.width*4 + col*4 + i + 1] >> rightshift, out); // Data. (RGB)
+        }
     }
     fclose(out);
 }
@@ -138,8 +137,8 @@ void UI (star stars [], int N){
 
         switch (c){
             case 'f': case 'F':
-                printf("\nFile information:\n\tFile type: %s\n\tDimensions: %d X %d\n\tMaximum pixel value: %d\n", img.PGM ? "Pixel Gray Map (PGM)" : "Flexible Image Transport System (FITS)", img.width, img.height, img.max);
-                if (!img.PGM) printf("\tResolution: %.2lf \"/px\n", res);
+                printf("\nFile information:\n\tFile type: %s\n\tDimensions: %d X %d\n\tMaximum pixel value: %d\n", img.type ? "Pixel Gray Map (PGM)" : "Flexible Image Transport System (FITS)", img.width, img.height, img.max);
+                if (!img.type) printf("\tResolution: %.2lf \"/px\n", res);
                 break;
             case 'h': case 'H':
                 printf("\nHistogram (logarithmic):\n");
@@ -177,12 +176,12 @@ void UI (star stars [], int N){
 
 /// @brief Calculates the resolution from the file metadata. (FITS only)
 float get_resolution (){
-    if (img.PGM) return res;
+    if (img.type) return res;
 
-    double focal_length = read_keyval(img.file, "FOCALLEN");
+    double focal_length = FITS_read_keyval(img.file, "FOCALLEN");
     if (isnan(focal_length)) return res;
 
-    double pixsc = read_keyval(img.file, "XPIXSZ  ");
+    double pixsc = FITS_read_keyval(img.file, "XPIXSZ  ");
     if (isnan(pixsc)) return res;
 
     return 206.265 * pixsc / focal_length; // Credit: https://astronomy.tools/calculators/ccd

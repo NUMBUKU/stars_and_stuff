@@ -7,6 +7,10 @@
 
 # include "../readfits/readfits.h"
 
+typedef enum {
+    FITS, PGM, TIFF
+} file_type;
+
 // Image struct.
 typedef struct {
     FILE * file; // File path.
@@ -14,10 +18,11 @@ typedef struct {
     int height; // Image height.
     int max; // Image max value.
     int thres; // Star detection threshold.
-    int PGM; // 0 if file is .fits type, 1 if file is .pgm file.
+    file_type type; // 0 if file is .fits type, 1 if file is .pgm file.
+    int grey; // 0 file is RGB, 1 if file is greyscale.
     double avg; // Average pixel value.
     unsigned short * data; // Data array.
-} picture;
+} starfile;
 
 // Vector struct.
 typedef struct {
@@ -38,14 +43,14 @@ typedef struct {
 /// @brief Reads the contents of a file into a given picture struct.
 /// @param path Should have .pgm or .fits extension.
 /// @param RGB_to_mono RGB to monochrome conversion function.
-/// @return -1 if path invalid, -2 if file invalid, -3 if allocation failed, 0 otherwise.
-int read_starfile (char const * path, picture * img);
+/// @return -1 if file invalid, -2 if allocation failed, 0 otherwise.
+int read_starfile (char const * path, starfile * img);
 
 /// @brief Extracts stars from the given file into the given array.
 /// @param img Should be run through the "read" function first.
 /// @param stars Should be the size of N_stars or bigger.
 /// @param N_stars Maximum number of stars to extract.
 /// @return Number of extracted stars.
-int extract_stars (picture * img, star stars [], int N_stars);
+int extract_stars (starfile * img, star stars [], int N_stars);
 
 # endif
