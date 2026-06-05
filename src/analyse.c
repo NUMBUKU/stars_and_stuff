@@ -83,7 +83,6 @@ int print_histogram (int * max, double * stddev){
 void mark_stars (star stars [], int N){
     FILE * out = fopen("marked.ppm", "wb");
     fprintf(out, "P6\n%d %d\n255\n", img.width, img.height);
-    int gain = 7;
     int rightshift = 8 * ((img.max + 1) >> 16);
     for (int row = 0; row < img.height; row++) for (int col = 0; col < img.width; col++){
         int close = 0, center = 0;
@@ -96,8 +95,8 @@ void mark_stars (star stars [], int N){
         if (close) { fputc(0, out); fputc(255, out); fputc(0, out); } // Green.
         else if (center) { fputc(255, out); fputc(0, out); fputc(0, out); } // Red.
         else {
-            if (img.grey) for (int i = 0; i < 3; i++) fputc(gain * img.data[row*img.width*4 + col*4] >> rightshift, out); // Data. (Greyscale)
-            else for (int i = 0; i < 3; i++) fputc(gain * img.data[row*img.width*4 + col*4 + i + 1] >> rightshift, out); // Data. (RGB)
+            if (img.grey) for (int i = 0; i < 3; i++) fputc(img.data[row*img.width*4 + col*4] >> rightshift, out); // Data. (Greyscale)
+            else for (int i = 0; i < 3; i++) fputc(img.data[row*img.width*4 + col*4 + i + 1] >> rightshift, out); // Data. (RGB)
         }
     }
     fclose(out);
