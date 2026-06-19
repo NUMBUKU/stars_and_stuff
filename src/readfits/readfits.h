@@ -2,7 +2,6 @@
 # define READFITS_H__
 
 # include <stdio.h>
-# include <math.h>
 
 /// @brief Places the file pointer at the start of the data array.
 /// @return -1 if the END keyword cannot be found or file ended preemptively, 0 otherwise.

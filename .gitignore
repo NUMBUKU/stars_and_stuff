@@ -1,6 +1,8 @@
 .vscode
 todo.txt
 
+*.py
+
 *.ppm
 *.pgm
 input

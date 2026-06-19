@@ -1,5 +1,7 @@
 # include "readfits.h"
 
+# include <math.h>
+
 char const * __BAYERPAT = "BAYERPAT";
 char const * __END      = "END     ";
 

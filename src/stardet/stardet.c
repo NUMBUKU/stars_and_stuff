@@ -1,5 +1,12 @@
 # include "stardet.h"
 
+# include <stdlib.h>
+# include <math.h>
+
+# include "../readfits/readfits.h"
+# include "../readtiff/readtiff.h"
+
+
 # ifndef M_PI
 # define M_PI 3.14159265358979323846
 # endif
@@ -8,24 +15,20 @@
 int const __FIND_MIDDLE_ITER = 3, // Number of iterations to find star center.
 __MAX_STARSIZE = 40, // Maximum star size.
 __RAYS = 10; // Number of rays to find major/minor axis. (should ALWAYS be even so there can be a minor/major pair)
-double const __STAR_MARGIN = 2.0; // Minimum number of FWHM diameters between stars
+double const __STAR_MARGIN = 4.0; // Minimum number of FWHM diameters between stars
 
 /// @brief RGB to monochrome conversion function. (CIE 1931)
 int __RGB_to_mono (int R, int G, int B){
-    return ( int ) (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
-}
-
-/// @brief Calculates the index of a row/collumn pair in the image array.
-int __ind (int row, int col, starfile * img){
-    return (row*img->width + col) << 2;
+    // return (( double ) R + ( double ) G + ( double ) B) / 3.0;
+    return (0.2126 * ( double ) R + 0.7152 * ( double ) G + 0.0722 * ( double ) B);
 }
 
 /// @brief Perform a byte swap on the input.
 /// @param in Should be either 1 or 2 bytes.
 /// @return The byte swapped input.
 signed short __endian_swap (unsigned short in){
-    short b0 = (in & 0xff) << 8, b1 = in >> 8; // Isolate bytes.
-    return b0 | b1; // Swap bytes.
+    short b0 = (in & 0xff) << 8, b1 = in >> 8; // Isolate and swap bytes.
+    return b0 | b1; // Recombine bytes.
 }
 
 /// @brief Close and free if an error ocurred.
@@ -40,12 +43,18 @@ void __close (starfile * img, int arr){
 /// @brief Round function.
 /// @return An integer, useful for indexing.
 int __rd (double x){
-    return ( int ) round(x);
+    return round(x);
+}
+
+/// @brief Calculates the index of a row/collumn pair in the image array.
+/// @note This is only the index of the gray value of the pixel. +1, 2 or 3 the returned value are indeces of the R, G and B data.
+int ind (int row, int col, starfile * img){
+    return (row*img->width + col) << 2;
 }
 
 /// @brief Detects the file type of the given path.
-/// @return 1 if PGM file; 0 if FITS file; -1 otherwise.
-int __check_file_type (char const * path){
+/// @return The file type, __inv if invalid.
+file_type __check_file_type (char const * path){
     char c = ' '; int i, pos = -1;
 
     // Find the last . in file extension
@@ -58,67 +67,74 @@ int __check_file_type (char const * path){
 
     i = pos+1;
     if (path[i] == 'p' && path[i+1] == 'g' && path[i+2] == 'm' && path[i+3] == '\0') return PGM; // PGM file.
-    else if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && path[i+3] == 's' && path[i+4] == '\0') return FITS; // FITS file.
-    else if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && path[i+4] == '\0') return FITS; // FIT file.
-    else if (path[i] == 't' && path[i+1] == 'i' && path[i+2] == 'f' && path[i+3] == '\0') return TIFF; // TIF file.
-    else if (path[i] == 't' && path[i+1] == 'i' && path[i+2] == 'f' && path[i+3] == 'f' && path[i+4] == '\0') return TIFF; // TIFF file.
+    else if (path[i] == 'f' && path[i+1] == 'i' && path[i+2] == 't' && ( path[i+3] == '\0' || (path[i+3] == 's' && path[i+4] == '\0') )) return FITS; // FIT(S) file.
+    else if (path[i] == 't' && path[i+1] == 'i' && path[i+2] == 'f' && ( path[i+3] == '\0' || (path[i+3] == 'f' && path[i+4] == '\0') )) return TIFF; // TIF(F) file.
     
-    return -1; // Not PGM or FITS: invalid file type.
+    return __inv; // Invalid file type.
 }
 
-/// @brief Reads the width, height and maximum pixel value.
+/// @brief Gets the bitpix, width, height and maximum pixel values and checks file validity.
 /// @return -1 if file is invalid, 0 otherwise.
 int __read_metadata (starfile * img){
-    if (img->type == PGM){
-        // Check PGM for validity.
-        if (fgetc(img->file) != 'P' || fgetc(img->file) != '5') return -1; fgetc(img->file);
+    switch (img->type){
+        case PGM:
+            // Check .pgm for validity.
+            if (fgetc(img->file) != 'P' || fgetc(img->file) != '5') return -1; fgetc(img->file);
 
-        // Read metadata.
-        fscanf(img->file, "%d %d", &img->width, &img->height);
-        fscanf(img->file, "%d", &img->max);
-        img->grey = 1;
+            // Read metadata.
+            fscanf(img->file, "%d %d", &img->width, &img->height);
+            fscanf(img->file, "%d", &img->max);
+            img->grey = 1;
 
-        return 0;
-    } if (img->type == FITS){
-        // Check FITS for validity.
-        if (FITS_read_keyval(img->file, "SIMPLE  ") != ( float ) 'T') return -1;
-        if (FITS_goto_end(img->file) == -1) return -1;
+            return 0;
+        case FITS:
+            // Check .fit(s) for validity.
+            if (FITS_read_keyval(img->file, "SIMPLE  ") != ( float ) 'T') return -1;
+            if (FITS_goto_end(img->file) == -1) return -1;
 
-        // Read metadata.
-        img->width = ( int ) FITS_read_keyval(img->file, "NAXIS1  ");
-        img->height = ( int ) FITS_read_keyval(img->file, "NAXIS2  ");
-        img->max = (1 << ( int ) FITS_read_keyval(img->file, "BITPIX  ")) - 1;
+            // Read metadata.
+            img->width = FITS_read_keyval(img->file, "NAXIS1  ");
+            img->height = FITS_read_keyval(img->file, "NAXIS2  ");
+            img->max = (1 << ( int ) FITS_read_keyval(img->file, "BITPIX  ")) - 1;
+            img->grey = 0;
+            char bayer [5]; if (FITS_read_bayer(img->file, bayer) == -1) img->grey = 1; // Monochrome file.
 
-        return 0;
-    } if (img->type == TIFF) {
-        // Check TIFF for validity
-        char buf [2]; if (fread(buf, 1, 2, img->file) != 2) return -1; // Read endianess
-        int little_endian;
-        if (buf[0] == 'I' && buf[1] == 'I') little_endian = 1; // Little endian
-        else if (buf[0] == 'M' && buf[1] == 'M') little_endian = 0; // Big endian
-        else return -1; 
-        unsigned short magic; if (fread(&magic, 2, 1, img->file) != 1) return -1;
-        if (!little_endian) magic = __endian_swap(magic);
-        if (magic != 42) return -1;
+            return 0;
+        case TIFF:
+            // Check .tif(f) for validity.
+            char buf [2]; if (fread(buf, 1, 2, img->file) != 2) return -1;
+            if (buf[0] != 'I' || buf[1] != 'I') return -1; // Check endianess
+            unsigned short magic; if (fread(&magic, 2, 1, img->file) != 1) return -1;
+            if (magic != 42) return -1; // Check magic number
+            int IFD_adress; fread(&IFD_adress, 4, 1, img->file);
+            fseek(img->file, IFD_adress, SEEK_SET);
+
+            // Read metadata.
+            img->width = TIFF_read_keyval(img->file, ImageWidth, 0);
+            img->height = TIFF_read_keyval(img->file, ImageLength, 0);
+            img->max = (1 << TIFF_read_keyval(img->file, BitsPerSample, 0)) - 1;
+            img->grey = 1 - TIFF_read_keyval(img->file, SamplesPerPixel, 0) / 3;
+
+            if (TIFF_goto_end(img->file) == -1) return -1;
+            return 0;
+        default:
+            return -1;
     }
-
-    return -1;
 }
 
 /// @brief Converts raw FITS data to physical data and debayers the FITS file if it has a Bayer pattern.
 /// @return -1 if malloc failed, 0 otherwise.
 int __debayer (starfile * img){
-    int bias = ( int ) FITS_read_keyval(img->file, "BZERO   ");
-    img->grey = 0;
-    char bayer [5]; if (FITS_read_bayer(img->file, bayer) == -1) img->grey = 1; // Monochrome file handling.
+    int bias = FITS_read_keyval(img->file, "BZERO   ");
     img->avg = 0.0; // Recalculate average.
 
     for (int row = 0; row < img->height; row++) for (int col = 0; col < img->width; col++){
-        img->data[__ind(row, col, img)] = bias + __endian_swap(img->data[__ind(row, col, img)]); // Convert raw data to physical value.
-        img->avg += img->data[__ind(row, col, img)];
+        img->data[ind(row, col, img)] = bias + __endian_swap(img->data[ind(row, col, img)]); // Convert raw data to physical value.
+        img->avg += img->data[ind(row, col, img)];
     }
     img->avg /= ( double ) (img->width * img->height);
     if (img->grey) return 0;
+    char bayer [5]; if (FITS_read_bayer(img->file, bayer) == -1) img->grey = 1; // Monochrome file.
     img->avg = 0.0; // Recalculate average again.
 
     // Debayering.
@@ -138,18 +154,18 @@ int __debayer (starfile * img){
                 else if (bayer[bayer_index] == 'G') colour_index = 1;
                 else if (bayer[bayer_index] == 'B') colour_index = 2; 
                 colour_count[colour_index]++;
-                colours[colour_index] += img->data[__ind(currow, curcol, img)];
+                colours[colour_index] += img->data[ind(currow, curcol, img)];
             }
 
-            for (int i = 0; i < 3; i++) buf[__ind(row, col, img) + i + 1] = colours[i] / colour_count[i]; // Take the average of all colours in the pixels neighbourhood.
-            buf[__ind(row, col, img)] = __RGB_to_mono(buf[__ind(row, col, img) + 1], buf[__ind(row, col, img) + 2], buf[__ind(row, col, img) + 3]);
+            for (int i = 0; i < 3; i++) buf[ind(row, col, img) + i + 1] = colours[i] / colour_count[i]; // Take the average of all colours in the pixels neighbourhood.
+            buf[ind(row, col, img)] = __RGB_to_mono(buf[ind(row, col, img) + 1], buf[ind(row, col, img) + 2], buf[ind(row, col, img) + 3]);
         }
     }
 
     // Write data frome buffer to image and calculate average.
     for (int row = 0; row < img->height; row++) for (int col = 0; col < img->width; col++){
-        for (int c = 0; c < 4; c++) img->data[__ind(row, col, img) + c] = buf[__ind(row, col, img) + c];
-        img->avg += ( double ) img->data[__ind(row, col, img)];
+        for (int c = 0; c < 4; c++) img->data[ind(row, col, img) + c] = buf[ind(row, col, img) + c];
+        img->avg += img->data[ind(row, col, img)];
     }
     img->avg /= ( double ) (img->width*img->height);
     
@@ -159,7 +175,6 @@ int __debayer (starfile * img){
 
 /// @brief Reads the contents of a file into a given picture struct.
 /// @param path Should have .pgm or .fits extension.
-/// @param RGB_to_mono RGB to monochrome conversion function.
 /// @return -1 if file invalid, -2 if allocation failed, 0 otherwise.
 int read_starfile (char const * path, starfile * img){
     img->file = fopen(path, "rb");
@@ -168,21 +183,42 @@ int read_starfile (char const * path, starfile * img){
 
     // Get metadata.
     if (__read_metadata(img) == -1){
-        __close(img, 0); return -2; // Invalid file.
+        __close(img, 0); return -1; // Invalid file.
     }
-    int temp = img->max + 1, i; for (i = 0; temp > 1; i++) temp = temp >> 1; int bytepix = i >> 3; // Determine bytes per pixelvalue.
+
+    // Determine bytes per pixelvalue.
+    int temp = img->max + 1, i;
+    for (i = 0; temp > 1; i++) temp = temp >> 1;
+    int bytepix = i >> 3;
 
     // Get data.
     img->data = ( unsigned short * ) malloc(img->height * img->width * 4 * sizeof(unsigned short)); // Allocate row array.
-    if (img->data == NULL) { __close(img, 0); return -3; } // Malloc failed.
-    for (int row = 0; row < img->height; row++){
-        for (int col = 0; col < img->width; col++){
-            unsigned short temp = 0;
-            if (fread(&temp, bytepix, 1, img->file) != 1){ // Read a pixel from the image.
-                __close(img, 1); return -4; // EOF reached.
+    if (img->data == NULL){ __close(img, 0); return -2; } // Malloc failed.
+
+    if (img->grey || img->type == FITS){
+        for (int row = 0; row < img->height; row++){
+            for (int col = 0; col < img->width; col++){
+                unsigned short temp;
+                if (fread(&temp, bytepix, 1, img->file) != 1){ // Read a pixel from the image.
+                    __close(img, 1); return -1; // EOF reached.
+                }
+                img->data[ind(row, col, img)] = temp;
+                img->avg += img->data[ind(row, col, img)];
             }
-            img->data[__ind(row, col, img)] = temp;
-            img->avg += ( double ) img->data[__ind(row, col, img)];
+        }
+    } else {
+        for (int row = 0; row < img->height; row++){
+            for (int col = 0; col < img->width; col++){
+                for (int c = 1; c <= 3; c++){
+                    unsigned short temp;
+                    if (fread(&temp, bytepix, 1, img->file) != 1){ // Read a pixel from the image.
+                        __close(img, 1); return -1; // EOF reached.
+                    }
+                    img->data[ind(row, col, img) + c] = temp;
+                }
+                img->data[ind(row, col, img)] = __RGB_to_mono(img->data[ind(row, col, img)+1], img->data[ind(row, col, img)+2], img->data[ind(row, col, img)+3]);
+                img->avg += img->data[ind(row, col, img)];
+            }
         }
     }
     img->avg /= ( double ) (img->width*img->height);
@@ -197,7 +233,7 @@ int read_starfile (char const * path, starfile * img){
 /// @return 1 if it is, 0 otherwise.
 int __potential_star (starfile * img, int x, int y){
     if (x+1 >= img->width || y+1 >= img->height) return 0; // Cut-off star or noise at the edge of the image.
-    if (img->data[__ind(y+1, x, img)] > img->thres || img->data[__ind(y, x+1, img)] > img->thres) return 1; // Potential star.
+    if (img->data[ind(y+1, x, img)] > img->thres || img->data[ind(y, x+1, img)] > img->thres) return 1; // Potential star.
     return 0; // Noise.
 }
 
@@ -213,7 +249,7 @@ int __compare_star (star stars [], int x, int y, int stari){
 
 /// @brief Find the current star's center by taking the weighted average.
 /// @return 1 if star was cutt-off or too large, 0 otherwise.
-int __find_middle (starfile * img, star stars [], int x, int y, int stari){
+int __find_centroid (starfile * img, star stars [], int x, int y, int stari){
     vect pos = {0};
     int xcur, ycur, max_size = __MAX_STARSIZE / 2;
     double s, c; // Sum and count variables.
@@ -221,33 +257,36 @@ int __find_middle (starfile * img, star stars [], int x, int y, int stari){
     pos.x = x; pos.y = y;
 
     for (int iter = 0; iter < __FIND_MIDDLE_ITER; iter++){ // Iterate to find star center more reliably.
+        int noisebool = 0;
         xcur = pos.x; ycur = pos.y;
 
         // Find middle x
         s = 0.0; c = 0.0; int count = 0;
-        while (img->data[__ind(__rd(pos.y), xcur, img)] > img->thres) { xcur--; if (xcur < 0) return 1;} xcur++; // Offset to edge of star.
-        while (img->data[__ind(__rd(pos.y), xcur, img)] > img->thres) { // Find other edge of star.
-            s += ( double ) (img->data[__ind(__rd(pos.y), xcur, img)] * xcur);
-            c += ( double ) img->data[__ind(__rd(pos.y), xcur, img)];
+        while (img->data[ind(__rd(pos.y), xcur, img)] > img->thres){ xcur--; if (xcur < 0) return 1; } xcur++; // Offset to edge of star.
+        while (img->data[ind(__rd(pos.y), xcur, img)] > img->thres){ // Find other edge of star.
+            s += img->data[ind(__rd(pos.y), xcur, img)] * xcur;
+            c += img->data[ind(__rd(pos.y), xcur, img)];
 
             xcur++; count++;
             if (xcur >= img->width) return 1; // Cut-off star.
             if (count > max_size) return 1; // Star too big.
         }
         pos.x = s/c; // Take the weighted average to find the center.
+        if (iter == __FIND_MIDDLE_ITER-1 && count == 3) noisebool = 1; // May be debayered noise
         
         // Find middle y
         s = 0.0; c = 0.0; count = 0;
-        while (img->data[__ind(ycur, __rd(pos.x), img)] > img->thres) { ycur--; if (ycur < 0) return 1;} ycur++; // Offset to edge of star.
-        while (img->data[__ind(ycur, __rd(pos.x), img)] > img->thres) { // Find other edge of star.
-            s += ( double ) (img->data[__ind(ycur, __rd(pos.x), img)] * ycur);
-            c += ( double ) img->data[__ind(ycur, __rd(pos.x), img)];
+        while (img->data[ind(ycur, __rd(pos.x), img)] > img->thres){ ycur--; if (ycur < 0) return 1;} ycur++; // Offset to edge of star.
+        while (img->data[ind(ycur, __rd(pos.x), img)] > img->thres){ // Find other edge of star.
+            s += img->data[ind(ycur, __rd(pos.x), img)] * ycur;
+            c += img->data[ind(ycur, __rd(pos.x), img)];
 
             ycur++; count++;
             if (ycur >= img->height) return 1; // Cut-off star.
             if (count > max_size) return 1; // Star too big.
         }
         pos.y = s/c; // Take the weighted average to find the center.
+        if (iter == __FIND_MIDDLE_ITER-1 && noisebool && count == 3) return 1; // Debayered noise
     }
     stars[stari].pos = pos; // Store extracted star center.
 
@@ -264,7 +303,7 @@ double __dist_ray (starfile * img, star stars [], double dir, int sign, int star
     do {
         x += xinc; y += yinc;
         if (__rd(x) >= img->width || __rd(y) >= img->height || __rd(x) < 0 || __rd(y) < 0) break;
-    } while (img->data[__ind(__rd(y), __rd(x), img)] > thres);
+    } while (img->data[ind(__rd(y), __rd(x), img)] > thres);
 
     double xdist = x - stars[stari].pos.x,
     ydist = y - stars[stari].pos.y;
@@ -275,19 +314,20 @@ double __dist_ray (starfile * img, star stars [], double dir, int sign, int star
 /// @brief Finds the index in the distance array of the axis perpendicular to the axis with the given angle.
 int __calc_perp_ax_index (double other_axis_angle){
     double axis_angle = 90.0 + other_axis_angle;
-    if (axis_angle >= 180.0) axis_angle -= 180.0;
-    int axis_index = axis_angle * __RAYS/180;
+    if (axis_angle >= 90.0) axis_angle -= 180.0;
+    int axis_index = round( (axis_angle + 90.0) * ( double ) __RAYS / 180.0 );
     return axis_index;
 }
 
 /// @brief Calculates the eccentricity of the current star assuming an ellipse.
 double __find_eccentricity (starfile * img, star stars [], int stari){
-    double dist_arr [__RAYS], max = 0;
+    double dist_arr [__RAYS], max = 0.0;
     int i = 0, same_ma_ax_len = 0, mi_ax_index_arr [__RAYS];
 
     // Find semi-major axis length and direction.
-    for (double dir = 0.0; dir < 180.0; dir += 180.0 / ( double ) __RAYS){
-        dist_arr[i] = (__dist_ray(img, stars, dir, 1, stari, img->thres) + __dist_ray(img, stars, dir, -1, stari, img->thres))/2;
+    double incr = 180.0 / ( double ) __RAYS;
+    for (double dir = -90.0; dir < 90.0; dir += incr){
+        dist_arr[i] = (__dist_ray(img, stars, dir, 1, stari, img->thres) + __dist_ray(img, stars, dir, -1, stari, img->thres))/2.0;
 
         if (dist_arr[i] > max) {
             max = dist_arr[i]; 
@@ -305,8 +345,9 @@ double __find_eccentricity (starfile * img, star stars [], int stari){
         if (dist_arr[mi_ax_index_arr[i]] < dist_arr[mi_axis_index]) mi_axis_index = mi_ax_index_arr[i];
     }
 
-    stars[stari].angle =__calc_perp_ax_index(( double ) mi_axis_index * 180.0/__RAYS) * 180.0/__RAYS; // Calculate major axis angle.
-    double e = sqrt(1 - ((dist_arr[mi_axis_index]*dist_arr[mi_axis_index]) / (max*max))); // Calculate eccentricity assuming an ellipse.
+    stars[stari].angle = ( double ) mi_axis_index * 180.0 / ( double ) __RAYS; // Calculate major axis angle.
+    if (stars[stari].angle >= 90.0) stars[stari].angle -= 180.0;
+    double e = sqrt(1.0 - ((dist_arr[mi_axis_index]*dist_arr[mi_axis_index]) / (max*max))); // Calculate eccentricity assuming an ellipse.
 
     return e;
 }
@@ -315,7 +356,7 @@ double __find_eccentricity (starfile * img, star stars [], int stari){
 /// @param perp Along major axis y/n.
 double __find_FWHM (starfile * img, star stars [], int stari, int perp){
     double dir;
-    int HM = (img->data[__ind(__rd(stars[stari].pos.y), __rd(stars[stari].pos.x), img)] + img->avg) / 2; // Half maximum.
+    int HM = (img->data[ind(__rd(stars[stari].pos.y), __rd(stars[stari].pos.x), img)] + img->avg) / 2; // Half maximum.
     if (HM < img->avg*2) HM = img->avg*2; // Truncate HM to above twice the average pixel value.
 
     // Calculate direction of the axis (minor/major)
@@ -334,11 +375,11 @@ double __find_HFR (starfile * img, star stars [], int stari, double dir, int sig
 
     // Find total flux.
     do {
-        tot += ( double ) img->data[__ind(__rd(y), __rd(x), img)] - img->avg;
+        tot += ( double ) img->data[ind(__rd(y), __rd(x), img)] - img->avg;
         x += xinc; y += yinc;
 
         if (__rd(x) >= img->width || __rd(y) >= img->height || __rd(x) < 0 || __rd(y) < 0) break;
-    } while (img->data[__ind(__rd(y), __rd(x), img)] > img->thres);
+    } while (img->data[ind(__rd(y), __rd(x), img)] > img->thres);
 
     x = stars[stari].pos.x; y = stars[stari].pos.y;
     tot /= 2.0; // Half flux.
@@ -346,12 +387,12 @@ double __find_HFR (starfile * img, star stars [], int stari, double dir, int sig
     // Find HFR.
     int part = 0;
     do {
-        part += img->data[__ind(__rd(y), __rd(x), img)] - img->avg;
+        part += img->data[ind(__rd(y), __rd(x), img)] - img->avg;
         x += xinc; y += yinc;
         if (part >= tot) break; // Half flux reached.
 
         if (__rd(x) >= img->width || __rd(y) >= img->height || __rd(x) < 0 || __rd(y) < 0) break;
-    } while (img->data[__ind(__rd(y), __rd(x), img)] > img->thres);
+    } while (img->data[ind(__rd(y), __rd(x), img)] > img->thres);
 
     // Calculate distance.
     double xdist = ( double ) stars[stari].pos.x - x,
@@ -373,11 +414,11 @@ double __find_HFD (starfile * img, star stars [], int stari, int perp){
 
 /// @brief Calculates the SNR of the current star, using the average pixel value as the noise value, and the star center as the signal value.
 double __find_SNR (starfile * img, star stars [], int stari){
-    return 10.0*(log10(( double ) img->data[__ind(__rd(stars[stari].pos.y), __rd(stars[stari].pos.x), img)]) - log10(img->avg));
+    return 10.0*(log10(( double ) img->data[ind(__rd(stars[stari].pos.y), __rd(stars[stari].pos.x), img)]) - log10(img->avg));
 }
 
 /// @brief Extracts stars from the given file into the given array.
-/// @param img Should be run through the "read" function first.
+/// @param img Should be run through the "read_starfile" function first.
 /// @param stars Should be the size of N_stars or bigger.
 /// @param N_stars Maximum number of stars to extract.
 /// @return Number of extracted stars.
@@ -389,10 +430,10 @@ int extract_stars (starfile * img, star stars [], int N_stars){
             if (stari != -1 && stari >= N_stars) return N_stars;
 
             int star_bool = 0;
-            if (img->data[__ind(row, col, img)] > img->thres) star_bool = __potential_star(img, col, row); // Check bright pixel is part of a non-cutoff star
+            if (img->data[ind(row, col, img)] > img->thres) star_bool = __potential_star(img, col, row); // Check bright pixel is part of a non-cutoff star
             if (star_bool) star_bool = __compare_star(stars, col, row, stari); // Check if bright pixel is not too close to any extracted stars
             if (star_bool){
-                if (__find_middle(img, stars, col, row, stari)) continue; // Iteratively find the center of the star
+                if (__find_centroid(img, stars, col, row, stari)) continue; // Iteratively find the center of the star
                 stars[stari].e = __find_eccentricity(img, stars, stari); // Find eccentricity of star and major axis incline angle
                 stars[stari].FWHM = sqrt(__find_FWHM(img, stars, stari, 0) * __find_FWHM(img, stars, stari, 1)); // Take geometric mean of FWHM along minor and major axes
                 stars[stari].HFD = sqrt(__find_HFD(img, stars, stari, 0) * __find_HFD(img, stars, stari, 1)); // Take geometric mean of HFD along minor and major axes
